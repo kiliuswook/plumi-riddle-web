@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ko">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="theme-color" content="#D9F27A">
+		<title>Plumi Riddle</title>
+		<style>
+html, body, #canvas { margin: 0; padding: 0; border: 0; }
+body {
+	color: white;
+	background: #1E1D24;
+	overflow: hidden;
+	touch-action: none;
+	height: 100vh;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+}
+#canvas { display: block; box-shadow: 0 0 48px rgba(0,0,0,.6); }
+#canvas:focus { outline: none; }
+#status {
+	position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+	background: #D9F27A;
+	display: flex; flex-direction: column; justify-content: center; align-items: center;
+	visibility: hidden; gap: 14px; padding: 24px; box-sizing: border-box;
+}
+#status-logo {
+	font-weight: 900; font-size: 44px; letter-spacing: .04em; color: #D9F27A; background: #1E1D24;
+	padding: 4px 22px; transform: rotate(-3deg); box-shadow: 8px 8px 0 #FF6B57;
+}
+#status-sub { color: #1E1D24; font-weight: 700; font-size: 14px; }
+#status-progress { width: min(70%, 320px); height: 16px; accent-color: #FF6B57; display: none; }
+#status-pct { color: #1E1D24; font-weight: 700; font-size: 13px; min-height: 18px; }
+#status-notice {
+	display: none; background: #fff; border: 4px solid #1E1D24; box-shadow: 8px 8px 0 #1E1D24;
+	color: #1E1D24; line-height: 1.5; margin: 0 1rem; padding: 1rem; text-align: center;
+	max-width: 340px; font-size: 14px; z-index: 1; word-break: keep-all;
+}
+#status-notice b { display: block; font-size: 17px; margin-bottom: 6px; }
+#status-notice button {
+	margin-top: 10px; background: #FF6B57; color: #fff; border: 3px solid #1E1D24; font-weight: 800;
+	font-size: 15px; padding: 8px 16px; box-shadow: 4px 4px 0 #1E1D24; cursor: pointer;
+}
+#status-notice small { display: block; margin-top: 8px; color: #8B8A96; font-size: 11px; word-break: break-all; }
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+
+	</head>
+	<body>
+		<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+		<noscript>Your browser does not support JavaScript.</noscript>
+
+		<div id="status">
+			<div id="status-logo">플루미?</div>
+			<div id="status-sub">스와이프로 푸는 수학 퍼즐 쇼</div>
+			<progress id="status-progress"></progress>
+			<div id="status-pct"></div>
+			<div id="status-notice"></div>
+		</div>
+
+		<script src="index.js"></script>
+		<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4877684,"index.wasm":37700666},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+
+// ---- phone frame: keep the 390x844 stage; the shell owns the canvas size (resize policy = none)
+(function () {
+	function fit() {
+		const c = document.getElementById('canvas');
+		if (!c) { return; }
+		const w = window.innerWidth, h = window.innerHeight, r = 390 / 844;
+		let cw = Math.min(w, h * r), ch = cw / r;
+		if (w <= 560) { cw = w; ch = h; }
+		cw = Math.round(cw); ch = Math.round(ch);
+		c.style.width = cw + 'px';
+		c.style.height = ch + 'px';
+		const d = Math.min(window.devicePixelRatio || 1, 2);
+		const pw = Math.round(cw * d), ph = Math.round(ch * d);
+		if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+	}
+	window.addEventListener('resize', fit);
+	window.addEventListener('orientationchange', function () { setTimeout(fit, 200); });
+	document.addEventListener('DOMContentLoaded', fit);
+	fit();
+	setInterval(fit, 400);
+}());
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const statusProgress = document.getElementById('status-progress');
+	const statusPct = document.getElementById('status-pct');
+	const statusNotice = document.getElementById('status-notice');
+	const ua = navigator.userAgent || '';
+	const here = window.location.href;
+
+	let initializing = true;
+	let statusMode = '';
+	let started = false;
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) { return; }
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			started = true;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function notice(html) {
+		statusNotice.innerHTML = html;
+		setStatusMode('notice');
+	}
+
+	function reloadButton(label) {
+		return '<button onclick="location.reload()">' + (label || '다시 시도') + '</button>';
+	}
+
+	function deviceInfo() {
+		return '<small>' + ua.replace(/</g, '&lt;') + '</small>';
+	}
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		let msg = '알 수 없는 오류';
+		if (err instanceof Error) { msg = err.message; } else if (typeof err === 'string') { msg = err; }
+		notice('<b>실행에 실패했어요</b>' + msg.replace(/</g, '&lt;').replace(/\n/g, '<br>') + reloadButton() + deviceInfo());
+		initializing = false;
+	}
+
+	// In-app browsers (KakaoTalk, Instagram, Facebook, Naver, LINE) often cannot run WebGL2/WASM.
+	const inApp = /KAKAOTALK|Instagram|FBAN|FBAV|NAVER\(inapp|Line\//i.test(ua);
+	function externalHint() {
+		let btn = '';
+		if (/KAKAOTALK/i.test(ua)) {
+			btn = '<button onclick="location.href=\'kakaotalk://web/openExternal?url=' + encodeURIComponent(here) + '\'">Chrome / Safari로 열기</button>';
+		} else if (/Line\//i.test(ua)) {
+			btn = '<button onclick="location.href=\'' + here + (here.indexOf('?') > -1 ? '&' : '?') + 'openExternalBrowser=1\'">외부 브라우저로 열기</button>';
+		} else {
+			btn = '<button onclick="navigator.clipboard && navigator.clipboard.writeText(\'' + here + '\'); this.textContent=\'링크 복사됨 · 브라우저에 붙여넣기\'">링크 복사</button>';
+		}
+		return btn;
+	}
+
+	function hasWebGL2() {
+		try {
+			const c = document.createElement('canvas');
+			return !!(c.getContext('webgl2'));
+		} catch (e) { return false; }
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (!hasWebGL2() && missing.indexOf('WebGL2') === -1) { missing.push('WebGL2'); }
+
+	if (missing.length !== 0) {
+		const why = inApp
+			? '앱 안의 브라우저에서는 실행이 막혀 있어요.<br>Chrome이나 Safari에서 열어 주세요.'
+			: '이 브라우저는 WebGL2 / WebAssembly를 지원하지 않아요.<br>최신 Chrome 또는 Safari에서 열어 주세요.';
+		notice('<b>이 브라우저에서는 실행할 수 없어요</b>' + why + '<br>' + externalHint() + '<small>필요: ' + missing.join(', ') + '</small>' + deviceInfo());
+	} else {
+		if (inApp) {
+			// give it a try, but tell the user what to do if it stalls
+			statusPct.textContent = '앱 내 브라우저는 느릴 수 있어요. 멈추면 Chrome/Safari로 열어 주세요.';
+		}
+		setStatusMode('progress');
+		let lastProgress = Date.now();
+		const engine = new Engine(GODOT_CONFIG);
+		engine.startGame({
+			'onProgress': function (current, total) {
+				lastProgress = Date.now();
+				if (current > 0 && total > 0) {
+					statusProgress.value = current;
+					statusProgress.max = total;
+					const pct = Math.min(100, Math.round(current / total * 100));
+					statusPct.textContent = '불러오는 중 ' + pct + '% · ' + (current / 1048576).toFixed(1) + ' / ' + (total / 1048576).toFixed(1) + ' MB';
+				} else {
+					statusProgress.removeAttribute('value');
+					statusProgress.removeAttribute('max');
+					statusPct.textContent = '불러오는 중…';
+				}
+			},
+		}).then(function () {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+
+		// Stall watchdog: no progress for a long time -> show a way out instead of a frozen bar.
+		const watchdog = setInterval(function () {
+			if (started || !initializing) { clearInterval(watchdog); return; }
+			const idle = Date.now() - lastProgress;
+			if (idle > 45000) {
+				clearInterval(watchdog);
+				notice('<b>로딩이 멈춘 것 같아요</b>' +
+					(inApp ? '앱 안의 브라우저에서는 자주 멈춰요. Chrome이나 Safari에서 열어 주세요.<br>' + externalHint()
+						: '네트워크가 느리거나 기기 메모리가 부족할 수 있어요. Wi-Fi에서 다시 시도하거나 다른 탭을 닫아 주세요.<br>' + reloadButton()) +
+					deviceInfo());
+			}
+		}, 5000);
+
+		window.addEventListener('error', function (e) {
+			if (!started && initializing) {
+				displayFailureNotice(e.message || 'script error');
+			}
+		});
+	}
+}());
+		</script>
+	</body>
+</html>
+
